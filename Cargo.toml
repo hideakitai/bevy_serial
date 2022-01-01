@@ -1,0 +1,21 @@
+[package]
+name = "bevy_serial"
+version = "0.1.0"
+authors = ["Hideaki Tai <hideaki.tai@gmail.com>"]
+edition = "2021"
+description = "Serial Port Communication Plugin for Bevy"
+readme = "README.md"
+repository = "https://github.com/hideakitai/bevy_serial"
+license = "MIT"
+keywords = ["bevy", "io", "hardware", "serial", "serialport", "mio"]
+categories = ["game-development", "hardware-support"]
+
+[dependencies]
+serialport = "4.0"
+mio = "0.7"
+mio-serial = "5.0"
+once_cell = "1.9"
+
+[dependencies.bevy]
+version = "0.5"
+default-features = false
