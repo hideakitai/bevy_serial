@@ -115,6 +115,13 @@ fn write_serial(
 }
 ```
 
+## Supported Versions
+
+| bevy | bevy_serial |
+| ---- | ----------- |
+| 0.6  | 0.2         |
+| 0.5  | 0.1         |
+
 ## License
 
 MIT

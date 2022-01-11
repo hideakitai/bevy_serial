@@ -114,6 +114,16 @@
 //! }
 //! ```
 //!
+//! ## Supported Versions
+//!
+//! | bevy | bevy_serial |
+//! | ---- | ----------- |
+//! | 0.6  | 0.2         |
+//! | 0.5  | 0.1         |
+//
+//! ## License
+//
+//! MIT
 
 pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
