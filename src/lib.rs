@@ -17,15 +17,15 @@
 //! struct SerialWriteTimer(Timer);
 //!
 //! fn main() {
-//!     App::build()
+//!     App::new()
 //!         .add_plugins(MinimalPlugins)
 //!         // simply specify port name and baud rate for `SerialPlugin`
 //!         .add_plugin(SerialPlugin::new("COM5", 115200))
 //!         // to write data to serial port periodically (every 1 second)
 //!         .insert_resource(SerialWriteTimer(Timer::from_seconds(1.0, true)))
 //!         // reading and writing from/to serial port is achieved via bevy's event system
-//!         .add_system(read_serial.system())
-//!         .add_system(write_serial.system())
+//!         .add_system(read_serial)
+//!         .add_system(write_serial)
 //!         .run();
 //! }
 //!
@@ -68,7 +68,7 @@
 //! struct SerialWriteTimer(Timer);
 //!
 //! fn main() {
-//!     App::build()
+//!     App::new()
 //!         .add_plugins(MinimalPlugins)
 //!         // you can specify various configurations for multiple serial ports by this way
 //!         .add_plugin(SerialPlugin {
@@ -86,8 +86,8 @@
 //!         // to write data to serial port periodically (every 1 second)
 //!         .insert_resource(SerialWriteTimer(Timer::from_seconds(1.0, true)))
 //!         // reading and writing from/to serial port is achieved via bevy's event system
-//!         .add_system(read_serial.system())
-//!         .add_system(write_serial.system())
+//!         .add_system(read_serial)
+//!         .add_system(write_serial)
 //!         .run();
 //! }
 //!
@@ -117,7 +117,7 @@
 
 pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
-use bevy::app::{AppBuilder, EventReader, EventWriter, Plugin};
+use bevy::app::{App, EventReader, EventWriter, Plugin};
 use bevy::ecs::system::{IntoSystem, Res, ResMut};
 use mio::{Events, Interest, Poll, Token};
 use mio_serial::SerialStream;
@@ -205,7 +205,7 @@ struct Indices(HashMap<String, usize>);
 const DEFAULT_READ_BUFFER_LEN: usize = 2048;
 
 impl Plugin for SerialPlugin {
-    fn build(&self, app: &mut AppBuilder) {
+    fn build(&self, app: &mut App) {
         let poll = Poll::new().unwrap();
         let events = Events::with_capacity(self.settings.len());
         let mut serials: Vec<Mutex<SerialStreamLabeled>> = vec![];
@@ -259,8 +259,8 @@ impl Plugin for SerialPlugin {
             .insert_resource(indices)
             .add_event::<SerialReadEvent>()
             .add_event::<SerialWriteEvent>()
-            .add_system(read_serial.system())
-            .add_system(write_serial.system());
+            .add_system(read_serial)
+            .add_system(write_serial);
     }
 }
 

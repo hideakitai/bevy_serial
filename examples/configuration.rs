@@ -9,7 +9,7 @@ use std::time::Duration;
 struct SerialWriteTimer(Timer);
 
 fn main() {
-    App::build()
+    App::new()
         .add_plugins(MinimalPlugins)
         // you can specify various configurations for multiple serial ports by this way
         .add_plugin(SerialPlugin {
@@ -27,8 +27,8 @@ fn main() {
         // to write data to serial port periodically (every 1 second)
         .insert_resource(SerialWriteTimer(Timer::from_seconds(1.0, true)))
         // reading and writing from/to serial port is achieved via bevy's event system
-        .add_system(read_serial.system())
-        .add_system(write_serial.system())
+        .add_system(read_serial)
+        .add_system(write_serial)
         .run();
 }
 
