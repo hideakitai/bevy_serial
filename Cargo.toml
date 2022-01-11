@@ -1,6 +1,6 @@
 [package]
 name = "bevy_serial"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Hideaki Tai <hideaki.tai@gmail.com>"]
 edition = "2021"
 description = "Serial Port Communication Plugin for Bevy"
