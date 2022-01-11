@@ -118,7 +118,7 @@
 pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
 use bevy::app::{App, EventReader, EventWriter, Plugin};
-use bevy::ecs::system::{IntoSystem, Res, ResMut};
+use bevy::ecs::system::{Res, ResMut};
 use mio::{Events, Interest, Poll, Token};
 use mio_serial::SerialStream;
 use once_cell::sync::OnceCell;
