@@ -127,7 +127,7 @@
 
 pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
-use bevy::app::{App, EventReader, EventWriter, Plugin};
+use bevy::app::{App, CoreStage, EventReader, EventWriter, Plugin};
 use bevy::ecs::system::{Res, ResMut};
 use mio::{Events, Interest, Poll, Token};
 use mio_serial::SerialStream;
@@ -269,8 +269,8 @@ impl Plugin for SerialPlugin {
             .insert_resource(indices)
             .add_event::<SerialReadEvent>()
             .add_event::<SerialWriteEvent>()
-            .add_system(read_serial)
-            .add_system(write_serial);
+            .add_system_to_stage(CoreStage::PreUpdate, read_serial)
+            .add_system_to_stage(CoreStage::PostUpdate, write_serial);
     }
 }
 
