@@ -127,4 +127,7 @@ fn write_serial(
 
 ## License
 
-MIT
+Dual-licensed under either
+
+- MIT
+- Apache 2.0

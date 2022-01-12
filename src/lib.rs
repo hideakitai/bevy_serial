@@ -128,8 +128,12 @@
 //! | 0.5  | 0.1         |
 //!
 //! ## License
-//
-//! MIT
+//!
+//! Dual-licensed under either
+//!
+//! - MIT
+//! - Apache 2.0
+
 
 pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
