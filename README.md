@@ -1,10 +1,13 @@
 # bevy_serial
 
-`bevy_serial` is a plugin to add non-blocking serial communication to bevy. This plugin is based on [`mio-serial`](https://github.com/berkowski/mio-serial)
-that can realize non-blocking high performance I/O.
+`bevy_serial` is a plugin to add non-blocking serial communication to bevy. This plugin is based on [`mio-serial`](https://github.com/berkowski/mio-serial) that can realize non-blocking high-performance I/O.
 
-Reading and writing from/to serial port is realized via bevy's event system. Each serial port is handled via port
-name or a unique label you choose.
+Reading and writing from/to serial port is realized via bevy's event system. Each serial port is handled via port name or a unique label you choose. These event handlers are added to the following stage to minimize the frame delay.
+
+- Reading: `CoreStage::PreUpdate`
+- Writing: `CoreStage::PostUpdate`
+
+## Usage
 
 ### Simple Example
 
