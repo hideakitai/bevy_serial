@@ -1,13 +1,11 @@
 //! # bevy_serial
 //!
-//! `bevy_serial` is a plugin to add non-blocking serial communication to bevy. This plugin is based on [`mio-serial`](https://github.com/berkowski/mio-serial)
-//! that can realize non-blocking high-performance I/O.
+//! `bevy_serial` is a plugin to add non-blocking serial communication to bevy. This plugin is based on [`mio-serial`](https://github.com/berkowski/mio-serial) that can realize non-blocking high-performance I/O.
 //!
-//! Reading and writing from/to serial port is realized via bevy's event system. Each serial port is handled via port
-//! name or a unique label you choose. These event handlers are added to the following stage to minimize the frame delay.
+//! Reading and writing from/to serial port is realized via bevy's event system. Each serial port is handled via port name or a unique label you choose. These event handlers are added to the following stage to minimize the frame delay.
 //!
-//! - Reading: `CoreStage::PreUpdate`
-//! - Writing: `CoreStage::PostUpdate`
+//! - Reading: `PreUpdate`
+//! - Writing: `PostUpdate`
 //!
 //! ## Usage
 //!
@@ -20,18 +18,24 @@
 //! use bevy_serial::{SerialPlugin, SerialReadEvent, SerialWriteEvent};
 //!
 //! // to write data to serial port periodically
+//! #[derive(Resource)]
 //! struct SerialWriteTimer(Timer);
+//!
+//! const SERIAL_PORT: &str = "/dev/ttyUSB0";
 //!
 //! fn main() {
 //!     App::new()
 //!         .add_plugins(MinimalPlugins)
 //!         // simply specify port name and baud rate for `SerialPlugin`
-//!         .add_plugin(SerialPlugin::new("COM5", 115200))
+//!         .add_plugins(SerialPlugin::new(SERIAL_PORT, 115200))
 //!         // to write data to serial port periodically (every 1 second)
-//!         .insert_resource(SerialWriteTimer(Timer::from_seconds(1.0, true)))
+//!         .insert_resource(SerialWriteTimer(Timer::from_seconds(
+//!             1.0,
+//!             TimerMode::Repeating,
+//!         )))
 //!         // reading and writing from/to serial port is achieved via bevy's event system
-//!         .add_system(read_serial)
-//!         .add_system(write_serial)
+//!         .add_systems(Update, read_serial)
+//!         .add_systems(Update, write_serial)
 //!         .run();
 //! }
 //!
@@ -40,7 +44,7 @@
 //!     // you can get label of the port and received data buffer from `SerialReadEvent`
 //!     for SerialReadEvent(label, buffer) in ev_serial.iter() {
 //!         let s = String::from_utf8(buffer.clone()).unwrap();
-//!         println!("received packet from {}: {}", label, s);
+//!         println!("received packet from {label}: {s}");
 //!     }
 //! }
 //!
@@ -50,10 +54,11 @@
 //!     mut timer: ResMut<SerialWriteTimer>,
 //!     time: Res<Time>,
 //! ) {
+//!     // write msg to serial port every 1 second not to flood serial port
 //!     if timer.0.tick(time.delta()).just_finished() {
 //!         // you can write to serial port via `SerialWriteEvent` with label and buffer to write
 //!         let buffer = b"Hello, bevy!";
-//!         ev_serial.send(SerialWriteEvent("COM5".to_string(), buffer.to_vec()));
+//!         ev_serial.send(SerialWriteEvent(SERIAL_PORT.to_string(), buffer.to_vec()));
 //!     }
 //! }
 //! ```
@@ -63,24 +68,14 @@
 //! You can add multiple serial ports with additional settings.
 //!
 //! ```rust
-//! use bevy::prelude::*;
-//! use bevy_serial::{
-//!     DataBits, FlowControl, Parity, SerialPlugin, SerialReadEvent, SerialSetting, SerialWriteEvent,
-//!     StopBits,
-//! };
-//! use std::time::Duration;
-//!
-//! // to write data to serial port periodically
-//! struct SerialWriteTimer(Timer);
-//!
 //! fn main() {
 //!     App::new()
 //!         .add_plugins(MinimalPlugins)
 //!         // you can specify various configurations for multiple serial ports by this way
-//!         .add_plugin(SerialPlugin {
+//!         .add_plugins(SerialPlugin {
 //!             settings: vec![SerialSetting {
-//!                 label: Some("my_serial".to_string()),
-//!                 port_name: "COM5".to_string(),
+//!                 label: Some(SERIAL_LABEL.to_string()),
+//!                 port_name: SERIAL_PORT.to_string(),
 //!                 baud_rate: 115200,
 //!                 data_bits: DataBits::Eight,
 //!                 flow_control: FlowControl::None,
@@ -89,43 +84,20 @@
 //!                 timeout: Duration::from_millis(0),
 //!             }],
 //!         })
-//!         // to write data to serial port periodically (every 1 second)
-//!         .insert_resource(SerialWriteTimer(Timer::from_seconds(1.0, true)))
 //!         // reading and writing from/to serial port is achieved via bevy's event system
-//!         .add_system(read_serial)
-//!         .add_system(write_serial)
+//!         .add_systems(Update, read_serial)
+//!         .add_systems(Update, write_serial)
 //!         .run();
-//! }
-//!
-//! // reading event for serial port
-//! fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
-//!     // you can get label of the port and received data buffer from `SerialReadEvent`
-//!     for SerialReadEvent(label, buffer) in ev_serial.iter() {
-//!         let s = String::from_utf8(buffer.clone()).unwrap();
-//!         println!("read packet from {}: {}", label, s);
-//!     }
-//! }
-//!
-//! // writing event for serial port
-//! fn write_serial(
-//!     mut ev_serial: EventWriter<SerialWriteEvent>,
-//!     mut timer: ResMut<SerialWriteTimer>,
-//!     time: Res<Time>,
-//! ) {
-//!     if timer.0.tick(time.delta()).just_finished() {
-//!         // you can write to serial port via `SerialWriteEvent` with label and buffer to write
-//!         let buffer = b"Hello, bevy!";
-//!         ev_serial.send(SerialWriteEvent("my_serial".to_string(), buffer.to_vec()));
-//!     }
 //! }
 //! ```
 //!
 //! ## Supported Versions
 //!
-//! | bevy | bevy_serial |
-//! | ---- | ----------- |
-//! | 0.6  | 0.2         |
-//! | 0.5  | 0.1         |
+//! | bevy  | bevy_serial |
+//! | ----- | ----------- |
+//! | 0.11  | 0.3         |
+//! | 0.6   | 0.2         |
+//! | 0.5   | 0.1         |
 //!
 //! ## License
 //!
@@ -134,11 +106,11 @@
 //! - MIT
 //! - Apache 2.0
 
-
 pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
-use bevy::app::{App, CoreStage, EventReader, EventWriter, Plugin};
-use bevy::ecs::system::{Res, ResMut};
+use bevy::app::{App, Plugin, PostUpdate, PreUpdate};
+use bevy::ecs::event::{Event, EventReader, EventWriter};
+use bevy::ecs::system::{Res, ResMut, Resource};
 use mio::{Events, Interest, Poll, Token};
 use mio_serial::SerialStream;
 use once_cell::sync::OnceCell;
@@ -202,9 +174,11 @@ impl Default for SerialSetting {
 }
 
 /// Bevy's event type to read serial port
+#[derive(Event)]
 pub struct SerialReadEvent(pub String, pub Vec<u8>);
 
 /// Bevy's event type to read serial port
+#[derive(Event)]
 pub struct SerialWriteEvent(pub String, pub Vec<u8>);
 
 /// Serial struct that is used internally for this crate
@@ -218,7 +192,26 @@ struct SerialStreamLabeled {
 /// Module scope global singleton to store serial ports
 static SERIALS: OnceCell<Vec<Mutex<SerialStreamLabeled>>> = OnceCell::new();
 
+/// Context to poll serial read event with `Poll` in `mio` crate
+#[derive(Resource)]
+struct MioContext {
+    poll: Poll,
+    events: Events,
+}
+
+impl MioContext {
+    /// poll serial read event (should timeout not to block other systems)
+    fn poll(&mut self) {
+        self.poll
+            .poll(&mut self.events, Some(Duration::from_micros(1)))
+            .unwrap_or_else(|e| {
+                panic!("Failed to poll events: {e:?}");
+            });
+    }
+}
+
 /// Component to get an index of serial port based on the label
+#[derive(Resource)]
 struct Indices(HashMap<String, usize>);
 
 /// The size of read buffer for one read system call
@@ -228,6 +221,7 @@ impl Plugin for SerialPlugin {
     fn build(&self, app: &mut App) {
         let poll = Poll::new().unwrap();
         let events = Events::with_capacity(self.settings.len());
+        let mio_ctx = MioContext { poll, events };
         let mut serials: Vec<Mutex<SerialStreamLabeled>> = vec![];
         let mut indices = Indices(HashMap::new());
 
@@ -246,10 +240,12 @@ impl Plugin for SerialPlugin {
             });
 
             // token index is same as index of vec
-            poll.registry()
+            mio_ctx
+                .poll
+                .registry()
                 .register(&mut stream, Token(i), Interest::READABLE)
                 .unwrap_or_else(|e| {
-                    panic!("Failed to register stream to poll : {:?}", e);
+                    panic!("Failed to register stream to poll : {e:?}");
                 });
 
             // if label is set, use label as a nickname of serial
@@ -271,16 +267,15 @@ impl Plugin for SerialPlugin {
 
         // set to global variables lazily
         SERIALS.set(serials).unwrap_or_else(|e| {
-            panic!("Failed to set SerialStream to global variable: {:?}", e);
+            panic!("Failed to set SerialStream to global variable: {e:?}");
         });
 
-        app.insert_resource(poll)
-            .insert_resource(events)
+        app.insert_resource(mio_ctx)
             .insert_resource(indices)
             .add_event::<SerialReadEvent>()
             .add_event::<SerialWriteEvent>()
-            .add_system_to_stage(CoreStage::PreUpdate, read_serial)
-            .add_system_to_stage(CoreStage::PostUpdate, write_serial);
+            .add_systems(PreUpdate, read_serial)
+            .add_systems(PostUpdate, write_serial);
     }
 }
 
@@ -288,19 +283,15 @@ impl Plugin for SerialPlugin {
 /// If any data has come to serial, `SerialReadEvent` is sent to the system subscribing it.
 fn read_serial(
     mut ev_receive_serial: EventWriter<SerialReadEvent>,
-    mut poll: ResMut<Poll>,
-    mut events: ResMut<Events>,
+    mut mio_ctx: ResMut<MioContext>,
     indices: Res<Indices>,
 ) {
     if !indices.0.is_empty() {
-        // poll serial read event (should timeout not to block other systems)
-        poll.poll(&mut events, Some(Duration::from_micros(1)))
-            .unwrap_or_else(|e| {
-                panic!("Failed to poll events: {:?}", e);
-            });
+        // poll serial read events
+        mio_ctx.poll();
 
         // if events have occurred, send `SerialReadEvent` with serial labels and read data buffer
-        for event in events.iter() {
+        for event in mio_ctx.events.iter() {
             // get serial instance based on the token index
             let serials = SERIALS.get().expect("SERIALS are not initialized");
             let serial_mtx = serials
@@ -360,10 +351,9 @@ fn write_serial(mut ev_write_serial: EventReader<SerialWriteEvent>, indices: Res
     if !indices.0.is_empty() {
         for SerialWriteEvent(label, buffer) in ev_write_serial.iter() {
             // get index of label
-            let &serial_index = indices
-                .0
-                .get(label)
-                .expect(format!("Label {} is not exist", label).as_str());
+            let &serial_index = indices.0.get(label).unwrap_or_else(|| {
+                panic!("Label {} is not exist", label.as_str());
+            });
             let serials = SERIALS.get().expect("SERIALS are not initialized");
             let serial_mtx = serials
                 .get(serial_index)
