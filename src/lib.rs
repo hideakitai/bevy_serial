@@ -95,6 +95,7 @@
 //!
 //! | bevy  | bevy_serial |
 //! | ----- | ----------- |
+//! | 0.12  | 0.4         |
 //! | 0.11  | 0.3         |
 //! | 0.6   | 0.2         |
 //! | 0.5   | 0.1         |
@@ -349,7 +350,7 @@ fn read_serial(
 /// The bytes are sent via `SerialWriteEvent` with label of serial port.
 fn write_serial(mut ev_write_serial: EventReader<SerialWriteEvent>, indices: Res<Indices>) {
     if !indices.0.is_empty() {
-        for SerialWriteEvent(label, buffer) in ev_write_serial.iter() {
+        for SerialWriteEvent(label, buffer) in ev_write_serial.read() {
             // get index of label
             let &serial_index = indices.0.get(label).unwrap_or_else(|| {
                 panic!("Label {} is not exist", label.as_str());
