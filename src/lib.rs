@@ -333,66 +333,69 @@ fn read_serial(
     mut mio_ctx: ResMut<MioContext>,
     indices: Res<Indices>,
 ) -> ReadWriteResults {
+    if indices.0.is_empty() {
+        return ReadWriteResults::new();
+    }
+
     let mut read_results = ReadWriteResults::new();
-    if !indices.0.is_empty() {
-        // poll serial read events
-        mio_ctx.poll();
+    // poll serial read events
+    mio_ctx.poll();
 
-        // if events have occurred, send `SerialReadEvent` with serial labels and read data buffer
-        for event in mio_ctx.events.iter() {
-            // get serial instance based on the token index
-            let serials = SERIALS.get().expect("SERIALS are not initialized");
-            let serial_mtx = serials
-                .get(event.token().0) // token index is same as index of vec
-                .expect("SERIALS are not initialized");
+    // if events have occurred, send `SerialReadEvent` with serial labels and read data buffer
+    for event in mio_ctx.events.iter() {
+        // get serial instance based on the token index
+        let serials = SERIALS.get().expect("SERIALS are not initialized");
+        let serial_mtx = serials
+            .get(event.token().0) // token index is same as index of vec
+            // TODO: convert to std::io::Error and return
+            .expect("SERIALS are not initialized");
 
-            if event.is_readable() {
-                let mut buffer = vec![0_u8; DEFAULT_READ_BUFFER_LEN];
-                let mut bytes_read = 0;
-                loop {
-                    // try to get lock of mutex and send data to event
-                    if let Ok(mut serial) = serial_mtx.lock() {
-                        match serial.stream.read(&mut buffer[bytes_read..]) {
-                            Ok(0) => {
-                                eprintln!("{} connection maybe closed", serial.label);
-                                read_results.insert(
-                                    serial.label.clone(),
-                                    Err(std::io::Error::new(
-                                        ErrorKind::NotConnected,
-                                        "Maybe connection closed",
-                                    )),
-                                );
-                                break;
+        if event.is_readable() {
+            let mut buffer = vec![0_u8; DEFAULT_READ_BUFFER_LEN];
+            let mut bytes_read = 0;
+            loop {
+                // try to get lock of mutex and send data to event
+                if let Ok(mut serial) = serial_mtx.lock() {
+                    match serial.stream.read(&mut buffer[bytes_read..]) {
+                        Ok(0) => {
+                            eprintln!("{} connection maybe closed", serial.label);
+                            read_results.insert(
+                                serial.label.clone(),
+                                Err(std::io::Error::new(
+                                    ErrorKind::NotConnected,
+                                    "Maybe connection closed",
+                                )),
+                            );
+                            break;
+                        }
+                        // read data successfully
+                        // if buffer is full, maybe there is more data to read
+                        Ok(n) => {
+                            bytes_read += n;
+                            if bytes_read == buffer.len() {
+                                buffer.resize(buffer.len() + DEFAULT_READ_BUFFER_LEN, 0);
                             }
-                            // read data successfully
-                            // if buffer is full, maybe there is more data to read
-                            Ok(n) => {
-                                bytes_read += n;
-                                if bytes_read == buffer.len() {
-                                    buffer.resize(buffer.len() + DEFAULT_READ_BUFFER_LEN, 0);
-                                }
-                                continue;
-                            }
-                            // would block indicates no more data to read
-                            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                                let label = serial.label.clone();
-                                let buffer = buffer.drain(..bytes_read).collect();
-                                ev_receive_serial.send(SerialReadEvent(label, buffer));
-                                read_results.insert(serial.label.clone(), Ok(bytes_read));
-                                break;
-                            }
-                            // if interrupted, we should continue readings
-                            Err(ref e) if e.kind() == ErrorKind::Interrupted => {
-                                continue;
-                            }
-                            // other errors are fatal
-                            Err(e) => {
-                                // TODO: Not Fatal in some cases????
+                            continue;
+                        }
+                        // would block indicates no more data to read
+                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                            let label = serial.label.clone();
+                            let buffer = buffer.drain(..bytes_read).collect();
+                            ev_receive_serial.send(SerialReadEvent(label, buffer));
+                            read_results.insert(serial.label.clone(), Ok(bytes_read));
+                            break;
+                        }
+                        // if interrupted, we should continue readings
+                        Err(ref e) if e.kind() == ErrorKind::Interrupted => {
+                            continue;
+                        }
+                        // other errors are fatal
+                        Err(e) => {
+                            // TODO: Not Fatal in some cases????
 
-                                eprintln!("Failed to read serial port {}: {}", serial.label, e);
-                                read_results.insert(serial.label.clone(), Err(e));
-                                break;
-                            }
+                            eprintln!("Failed to read serial port {}: {}", serial.label, e);
+                            read_results.insert(serial.label.clone(), Err(e));
+                            break;
                         }
                     }
                 }
@@ -422,51 +425,54 @@ fn write_serial(
     mut ev_write_serial: EventReader<SerialWriteEvent>,
     indices: Res<Indices>,
 ) -> ReadWriteResults {
+    if indices.0.is_empty() {
+        return ReadWriteResults::new();
+    }
+
     let mut rw_results = ReadWriteResults::new();
-    if !indices.0.is_empty() {
-        for SerialWriteEvent(label, buffer) in ev_write_serial.read() {
-            // get index of label
-            let &serial_index = indices.0.get(label).unwrap_or_else(|| {
-                panic!("{} is not exist", label.as_str());
-            });
-            let serials = SERIALS.get().expect("SERIALS are not initialized");
-            let serial_mtx = serials
-                .get(serial_index)
-                .expect("SERIALS are not initialized");
+    for SerialWriteEvent(label, buffer) in ev_write_serial.read() {
+        // get index of label
+        let &serial_index = indices.0.get(label).unwrap_or_else(|| {
+            panic!("{} is not exist", label.as_str());
+        });
+        let serials = SERIALS.get().expect("SERIALS are not initialized");
+        // TODO: convert to std::io::Error and return
+        let serial_mtx = serials
+            .get(serial_index)
+            .expect("SERIALS are not initialized");
 
-            // write buffered data to serial
-            let mut bytes_wrote = 0;
-            loop {
-                // try to get lock of mutex and send data to event
-                if let Ok(mut serial) = serial_mtx.lock() {
-                    // write the entire buffered data in a single system call
-                    match serial.stream.write(&buffer[bytes_wrote..]) {
-                        // error if returned len is less than expected (same as `io::Write::write_all` does)
-                        Ok(n) if n < buffer.len() => {
-                            bytes_wrote += n;
-                        }
-                        // wrote queued data successfully
-                        Ok(_) => {
-                            bytes_wrote += buffer.len();
-                        }
-                        // would block indicates that this port is not ready so try again
-                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
-                        // if interrupted, we should try again
-                        Err(ref e) if e.kind() == ErrorKind::Interrupted => {}
-                        // other errors are fatal
-                        Err(e) => {
-                            eprintln!("Failed to write serial port {}: {}", serial.label, e);
-                            rw_results.insert(serial.label.clone(), Err(e));
-                            break;
-                        }
+        // write buffered data to serial
+        let mut bytes_wrote = 0;
+        loop {
+            // try to get lock of mutex and send data to event
+            if let Ok(mut serial) = serial_mtx.lock() {
+                // write the entire buffered data in a single system call
+                match serial.stream.write(&buffer[bytes_wrote..]) {
+                    // error if returned len is less than expected (same as `io::Write::write_all` does)
+                    Ok(n) if n < buffer.len() => {
+                        bytes_wrote += n;
                     }
-
-                    if bytes_wrote == buffer.len() {
-                        rw_results.insert(serial.label.clone(), Ok(bytes_wrote));
+                    // wrote queued data successfully
+                    Ok(_) => {
+                        bytes_wrote += buffer.len();
+                    }
+                    // would block indicates that this port is not ready so try again
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
+                    // if interrupted, we should try again
+                    Err(ref e) if e.kind() == ErrorKind::Interrupted => {}
+                    // other errors are fatal
+                    Err(e) => {
+                        eprintln!("Failed to write serial port {}: {}", serial.label, e);
+                        rw_results.insert(serial.label.clone(), Err(e));
                         break;
-                    } else {
-                        continue;
                     }
+                }
+
+                if bytes_wrote == buffer.len() {
+                    rw_results.insert(serial.label.clone(), Ok(bytes_wrote));
+                    break;
+                } else {
+                    continue;
                 }
             }
         }
