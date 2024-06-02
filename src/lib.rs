@@ -121,28 +121,6 @@ use std::io::{ErrorKind, Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Plugin that can be added to Bevy
-#[derive(Clone)]
-pub struct SerialPlugin {
-    pub config: Vec<SerialConfig>,
-}
-
-impl SerialPlugin {
-    pub fn new(port_name: &str, baud_rate: u32) -> Self {
-        Self {
-            config: vec![SerialConfig {
-                port_name: port_name.to_string(),
-                baud_rate,
-                ..Default::default()
-            }],
-        }
-    }
-
-    pub fn new_with_config(config: Vec<SerialConfig>) -> Self {
-        Self { config }
-    }
-}
-
 /// Serial error handler type
 type ResultHandler = Arc<dyn Fn(&str, &Result<usize, std::io::Error>) + Send + Sync + 'static>;
 
@@ -222,13 +200,6 @@ struct SerialStreamLabeled {
     read_buffer_len: usize,
 }
 
-/// Module scope global singleton to store serial ports
-static SERIALS: OnceCell<Vec<Mutex<SerialStreamLabeled>>> = OnceCell::new();
-/// Module scope global singleton to store read serial result handler
-static READ_RESULT_HANDLERS: OnceCell<HashMap<String, Option<ResultHandler>>> = OnceCell::new();
-/// Module scope global singleton to store write serial result handler
-static WRITE_RESULT_HANDLERS: OnceCell<HashMap<String, Option<ResultHandler>>> = OnceCell::new();
-
 /// Context to poll serial read event with `Poll` in `mio` crate
 #[derive(Resource)]
 struct MioContext {
@@ -254,8 +225,34 @@ struct Indices(HashMap<String, usize>);
 /// Serial read/write results passed to the error handler
 type ReadWriteResults = HashMap<String, Result<usize, std::io::Error>>;
 
-/// The size of read buffer for one read system call
-const DEFAULT_READ_BUFFER_LEN: usize = 2048;
+/// Module scope global singleton to store serial ports
+static SERIALS: OnceCell<Vec<Mutex<SerialStreamLabeled>>> = OnceCell::new();
+/// Module scope global singleton to store read serial result handler
+static READ_RESULT_HANDLERS: OnceCell<HashMap<String, Option<ResultHandler>>> = OnceCell::new();
+/// Module scope global singleton to store write serial result handler
+static WRITE_RESULT_HANDLERS: OnceCell<HashMap<String, Option<ResultHandler>>> = OnceCell::new();
+
+/// Plugin that can be added to Bevy
+#[derive(Clone)]
+pub struct SerialPlugin {
+    pub config: Vec<SerialConfig>,
+}
+
+impl SerialPlugin {
+    pub fn new(port_name: &str, baud_rate: u32) -> Self {
+        Self {
+            config: vec![SerialConfig {
+                port_name: port_name.to_string(),
+                baud_rate,
+                ..Default::default()
+            }],
+        }
+    }
+
+    pub fn new_with_config(config: Vec<SerialConfig>) -> Self {
+        Self { config }
+    }
+}
 
 impl Plugin for SerialPlugin {
     fn build(&self, app: &mut App) {
