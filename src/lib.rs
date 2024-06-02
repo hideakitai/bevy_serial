@@ -165,6 +165,8 @@ pub struct SerialConfig {
     pub stop_bits: StopBits,
     /// Amount of time to wait to receive data before timing out
     pub timeout: Duration,
+    /// The size of read buffer for one read system call
+    pub read_buffer_len: usize,
     /// Result handler for read serial port
     pub read_result_handler: Option<ResultHandler>,
     /// Result handler for write serial port
@@ -197,6 +199,7 @@ impl Default for SerialConfig {
             parity: Parity::None,
             stop_bits: StopBits::One,
             timeout: Duration::from_millis(0),
+            read_buffer_len: 2048,
             read_result_handler: None,
             write_result_handler: None,
         }
@@ -216,6 +219,7 @@ pub struct SerialWriteEvent(pub String, pub Vec<u8>);
 struct SerialStreamLabeled {
     stream: SerialStream,
     label: String,
+    read_buffer_len: usize,
 }
 
 /// Module scope global singleton to store serial ports
@@ -358,11 +362,11 @@ fn read_serial(
             // TODO: convert to std::io::Error and return
             .expect("SERIALS are not initialized");
 
-        let mut buffer = vec![0_u8; DEFAULT_READ_BUFFER_LEN];
-        let mut bytes_read = 0;
         loop {
             // try to get lock of mutex and send data to event
             if let Ok(mut serial) = serial_mtx.lock() {
+                let mut buffer = vec![0_u8; serial.read_buffer_len];
+                let mut bytes_read = 0;
                 match serial.stream.read(&mut buffer[bytes_read..]) {
                     Ok(0) => {
                         eprintln!("{} connection maybe closed", serial.label);
@@ -380,7 +384,7 @@ fn read_serial(
                     Ok(n) => {
                         bytes_read += n;
                         if bytes_read == buffer.len() {
-                            buffer.resize(buffer.len() + DEFAULT_READ_BUFFER_LEN, 0);
+                            buffer.resize(buffer.len() + serial.read_buffer_len, 0);
                         }
                         continue;
                     }

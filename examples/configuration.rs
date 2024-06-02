@@ -26,6 +26,7 @@ fn main() {
             parity: Parity::None,
             stop_bits: StopBits::One,
             timeout: Duration::from_millis(0),
+            read_buffer_len: 2048,
             read_result_handler: Some(Arc::new(|label, result| {
                 println!("Read result of {label}: {result:?}");
             })),
