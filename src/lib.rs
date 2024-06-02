@@ -34,8 +34,8 @@
 //!             TimerMode::Repeating,
 //!         )))
 //!         // reading and writing from/to serial port is achieved via bevy's event system
-//!         .add_systems(Update, read_serial.pipe(read_serial_error_handler))
-//!         .add_systems(Update, write_serial.pipe(write_serial_error_handler))
+//!         .add_systems(Update, read_serial.pipe(read_serial_result_handler))
+//!         .add_systems(Update, write_serial.pipe(write_serial_result_handler))
 //!         .run();
 //! }
 //!
@@ -121,7 +121,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Serial error handler type
+/// Serial read/write result handler type
 type ResultHandler = Arc<dyn Fn(&str, &Result<usize, std::io::Error>) + Send + Sync + 'static>;
 
 /// Config for users to initialize this plugin
@@ -162,6 +162,7 @@ impl std::fmt::Debug for SerialConfig {
             .field("parity", &self.parity)
             .field("stop_bits", &self.stop_bits)
             .field("timeout", &self.timeout)
+            .field("read_buffer_len", &self.read_buffer_len)
             .finish()
     }
 }
@@ -222,7 +223,7 @@ impl MioContext {
 #[derive(Resource)]
 struct Indices(HashMap<String, usize>);
 
-/// Serial read/write results passed to the error handler
+/// Serial read/write results passed to the result handler
 type ReadWriteResults = HashMap<String, Result<usize, std::io::Error>>;
 
 /// Module scope global singleton to store serial ports
@@ -342,11 +343,11 @@ fn read_serial(
         return ReadWriteResults::new();
     }
 
-    let mut read_results = ReadWriteResults::new();
     // poll serial read events
     mio_ctx.poll();
 
     // if events have occurred, send `SerialReadEvent` with serial labels and read data buffer
+    let mut read_results = ReadWriteResults::new();
     for event in mio_ctx.events.iter() {
         if !event.is_readable() {
             continue;
@@ -356,8 +357,7 @@ fn read_serial(
         let serials = SERIALS.get().expect("SERIALS are not initialized");
         let serial_mtx = serials
             .get(event.token().0) // token index is same as index of vec
-            // TODO: convert to std::io::Error and return
-            .expect("SERIALS are not initialized");
+            .expect(&format!("SERIALS index {} not found", event.token().0));
 
         loop {
             // try to get lock of mutex and send data to event
@@ -399,8 +399,6 @@ fn read_serial(
                     }
                     // other errors are fatal
                     Err(e) => {
-                        // TODO: Not Fatal in some cases????
-
                         eprintln!("Failed to read serial port {}: {}", serial.label, e);
                         read_results.insert(serial.label.clone(), Err(e));
                         break;
@@ -415,12 +413,12 @@ fn read_serial(
 /// Read serial result handler to handle read results
 /// This system is piped with `read_serial` system
 fn read_serial_result_handler(In(result): In<ReadWriteResults>) {
-    let read_error_handlers = READ_RESULT_HANDLERS
+    let read_result_handlers = READ_RESULT_HANDLERS
         .get()
-        .expect("READ_ERROR_HANDLERS are not initialized");
+        .expect("READ_RESULT_HANDLERS are not initialized");
 
     for (label, result) in result.iter() {
-        if let Some(Some(handler)) = read_error_handlers.get(label) {
+        if let Some(Some(handler)) = read_result_handlers.get(label) {
             handler(label, result);
         }
     }
@@ -443,10 +441,9 @@ fn write_serial(
             panic!("{} is not exist", label.as_str());
         });
         let serials = SERIALS.get().expect("SERIALS are not initialized");
-        // TODO: convert to std::io::Error and return
         let serial_mtx = serials
             .get(serial_index)
-            .expect("SERIALS are not initialized");
+            .expect(&format!("SERIALS index {serial_index} not found"));
 
         // write buffered data to serial
         let mut bytes_wrote = 0;
@@ -490,12 +487,12 @@ fn write_serial(
 /// Write serial result handler to handle write results
 /// This system is piped with `write_serial` system
 fn write_serial_result_handler(In(result): In<ReadWriteResults>) {
-    let write_error_handlers = WRITE_RESULT_HANDLERS
+    let write_result_handlers = WRITE_RESULT_HANDLERS
         .get()
-        .expect("WRITE_ERROR_HANDLERS are not initialized");
+        .expect("WRITE_RESULT_HANDLERS are not initialized");
 
     for (label, result) in result.iter() {
-        if let Some(Some(handler)) = write_error_handlers.get(label) {
+        if let Some(Some(handler)) = write_result_handlers.get(label) {
             handler(label, result);
         }
     }

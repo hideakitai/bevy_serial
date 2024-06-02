@@ -28,7 +28,7 @@ fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
     // you can get label of the port and received data buffer from `SerialReadEvent`
     for SerialReadEvent(label, buffer) in ev_serial.read() {
         let s = String::from_utf8(buffer.clone()).unwrap();
-        println!("received packet from {label}: {s}");
+        println!("Received packet from {label}: {s}");
     }
 }
 
