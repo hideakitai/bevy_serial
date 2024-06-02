@@ -34,15 +34,15 @@
 //!             TimerMode::Repeating,
 //!         )))
 //!         // reading and writing from/to serial port is achieved via bevy's event system
-//!         .add_systems(Update, read_serial)
-//!         .add_systems(Update, write_serial)
+//!         .add_systems(Update, read_serial.pipe(read_serial_error_handler))
+//!         .add_systems(Update, write_serial.pipe(write_serial_error_handler))
 //!         .run();
 //! }
 //!
 //! // reading event for serial port
 //! fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
 //!     // you can get label of the port and received data buffer from `SerialReadEvent`
-//!     for SerialReadEvent(label, buffer) in ev_serial.iter() {
+//!     for SerialReadEvent(label, buffer) in ev_serial.read() {
 //!         let s = String::from_utf8(buffer.clone()).unwrap();
 //!         println!("received packet from {label}: {s}");
 //!     }
@@ -63,9 +63,9 @@
 //! }
 //! ```
 //!
-//! ### Multiple Serial Ports with Additional Settings
+//! ### Multiple Serial Ports with Additional Config
 //!
-//! You can add multiple serial ports with additional settings.
+//! You can add multiple serial ports with additional config.
 //!
 //! ```rust
 //! fn main() {
@@ -73,7 +73,7 @@
 //!         .add_plugins(MinimalPlugins)
 //!         // you can specify various configurations for multiple serial ports by this way
 //!         .add_plugins(SerialPlugin {
-//!             settings: vec![SerialSetting {
+//!             config: vec![SerialConfig {
 //!                 label: Some(SERIAL_LABEL.to_string()),
 //!                 port_name: SERIAL_PORT.to_string(),
 //!                 baud_rate: 115200,
@@ -124,13 +124,13 @@ use std::time::Duration;
 /// Plugin that can be added to Bevy
 #[derive(Clone)]
 pub struct SerialPlugin {
-    pub settings: Vec<SerialSetting>,
+    pub config: Vec<SerialConfig>,
 }
 
 impl SerialPlugin {
     pub fn new(port_name: &str, baud_rate: u32) -> Self {
         Self {
-            settings: vec![SerialSetting {
+            config: vec![SerialConfig {
                 port_name: port_name.to_string(),
                 baud_rate,
                 ..Default::default()
@@ -138,17 +138,17 @@ impl SerialPlugin {
         }
     }
 
-    pub fn new_with_settings(settings: Vec<SerialSetting>) -> Self {
-        Self { settings }
+    pub fn new_with_config(config: Vec<SerialConfig>) -> Self {
+        Self { config }
     }
 }
 
 /// Serial error handler type
 type ResultHandler = Arc<dyn Fn(&str, &Result<usize, std::io::Error>) + Send + Sync + 'static>;
 
-/// Settings for users to initialize this plugin
+/// Config for users to initialize this plugin
 #[derive(Clone)]
-pub struct SerialSetting {
+pub struct SerialConfig {
     /// The intuitive name for this serial port
     pub label: Option<String>,
     /// The port name, usually the device path
@@ -171,9 +171,9 @@ pub struct SerialSetting {
     pub write_result_handler: Option<ResultHandler>,
 }
 
-impl std::fmt::Debug for SerialSetting {
+impl std::fmt::Debug for SerialConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SerialSetting")
+        f.debug_struct("SerialConfig")
             .field("label", &self.label)
             .field("port_name", &self.port_name)
             .field("baud_rate", &self.baud_rate)
@@ -186,7 +186,7 @@ impl std::fmt::Debug for SerialSetting {
     }
 }
 
-impl Default for SerialSetting {
+impl Default for SerialConfig {
     fn default() -> Self {
         Self {
             label: None,
@@ -256,25 +256,25 @@ const DEFAULT_READ_BUFFER_LEN: usize = 2048;
 impl Plugin for SerialPlugin {
     fn build(&self, app: &mut App) {
         let poll = Poll::new().unwrap();
-        let events = Events::with_capacity(self.settings.len());
+        let events = Events::with_capacity(self.config.len());
         let mio_ctx = MioContext { poll, events };
         let mut serials: Vec<Mutex<SerialStreamLabeled>> = vec![];
         let mut read_result_handlers: HashMap<String, Option<ResultHandler>> = HashMap::new();
         let mut write_result_handlers: HashMap<String, Option<ResultHandler>> = HashMap::new();
         let mut indices = Indices(HashMap::new());
 
-        for (i, setting) in self.settings.iter().enumerate() {
+        for (i, config) in self.config.iter().enumerate() {
             // create serial port builder from `serialport` crate
-            let port_builder = serialport::new(&setting.port_name, setting.baud_rate)
-                .data_bits(setting.data_bits)
-                .flow_control(setting.flow_control)
-                .parity(setting.parity)
-                .stop_bits(setting.stop_bits)
-                .timeout(setting.timeout);
+            let port_builder = serialport::new(&config.port_name, config.baud_rate)
+                .data_bits(config.data_bits)
+                .flow_control(config.flow_control)
+                .parity(config.parity)
+                .stop_bits(config.stop_bits)
+                .timeout(config.timeout);
 
             // create `mio_serial::SerailStream` from `seriaport` builder
             let mut stream = SerialStream::open(&port_builder).unwrap_or_else(|e| {
-                panic!("Failed to open serial port {}: {:?}", setting.port_name, e);
+                panic!("Failed to open serial port {}: {:?}", config.port_name, e);
             });
 
             // token index is same as index of vec
@@ -288,18 +288,22 @@ impl Plugin for SerialPlugin {
 
             // if label is set, use label as a nickname of serial
             // if not, use `port_name` as a nickname
-            let label = if let Some(label) = &setting.label {
+            let label = if let Some(label) = &config.label {
                 label.clone()
             } else {
-                setting.port_name.clone()
+                config.port_name.clone()
             };
 
             // store indices (resource)
             indices.0.insert(label.clone(), i);
             // store serials and result handlers (global variables)
-            read_result_handlers.insert(label.clone(), setting.read_result_handler.clone());
-            write_result_handlers.insert(label.clone(), setting.write_result_handler.clone());
-            serials.push(Mutex::new(SerialStreamLabeled { stream, label }));
+            read_result_handlers.insert(label.clone(), config.read_result_handler.clone());
+            write_result_handlers.insert(label.clone(), config.write_result_handler.clone());
+            serials.push(Mutex::new(SerialStreamLabeled {
+                stream,
+                label,
+                read_buffer_len: config.read_buffer_len,
+            }));
         }
 
         // set to global variables lazily

@@ -63,9 +63,9 @@ fn write_serial(
 }
 ```
 
-### Multiple Serial Ports with Additional Settings
+### Multiple Serial Ports with Additional Config
 
-You can add multiple serial ports with additional settings.
+You can add multiple serial ports with additional config.
 
 ```rust
 fn main() {
@@ -73,7 +73,7 @@ fn main() {
         .add_plugins(MinimalPlugins)
         // you can specify various configurations for multiple serial ports by this way
         .add_plugins(SerialPlugin {
-            settings: vec![SerialSetting {
+            config: vec![SerialConfig {
                 label: Some(SERIAL_LABEL.to_string()),
                 port_name: SERIAL_PORT.to_string(),
                 baud_rate: 115200,

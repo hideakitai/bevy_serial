@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_serial::{
-    DataBits, FlowControl, Parity, SerialPlugin, SerialReadEvent, SerialSetting, SerialWriteEvent,
+    DataBits, FlowControl, Parity, SerialConfig, SerialPlugin, SerialReadEvent, SerialWriteEvent,
     StopBits,
 };
 use std::sync::Arc;
@@ -17,7 +17,7 @@ fn main() {
     App::new()
         .add_plugins(MinimalPlugins)
         // you can specify various configurations for multiple serial ports by this way
-        .add_plugins(SerialPlugin::new_with_settings(vec![SerialSetting {
+        .add_plugins(SerialPlugin::new_with_config(vec![SerialConfig {
             label: Some(SERIAL_LABEL.to_string()),
             port_name: SERIAL_PORT.to_string(),
             baud_rate: 115200,
