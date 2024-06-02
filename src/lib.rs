@@ -112,17 +112,17 @@ pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
 use bevy::app::{App, Plugin, PostUpdate, PreUpdate};
 use bevy::ecs::event::{Event, EventReader, EventWriter};
-use bevy::ecs::system::{Res, ResMut, Resource};
+use bevy::ecs::system::{In, IntoSystem, Res, ResMut, Resource};
 use mio::{Events, Interest, Poll, Token};
 use mio_serial::SerialStream;
 use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Plugin that can be added to Bevy
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct SerialPlugin {
     pub settings: Vec<SerialSetting>,
 }
@@ -137,10 +137,17 @@ impl SerialPlugin {
             }],
         }
     }
+
+    pub fn new_with_settings(settings: Vec<SerialSetting>) -> Self {
+        Self { settings }
+    }
 }
 
+/// Serial error handler type
+type ResultHandler = Arc<dyn Fn(&str, &Result<usize, std::io::Error>) + Send + Sync + 'static>;
+
 /// Settings for users to initialize this plugin
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct SerialSetting {
     /// The intuitive name for this serial port
     pub label: Option<String>,
@@ -158,6 +165,25 @@ pub struct SerialSetting {
     pub stop_bits: StopBits,
     /// Amount of time to wait to receive data before timing out
     pub timeout: Duration,
+    /// Result handler for read serial port
+    pub read_result_handler: Option<ResultHandler>,
+    /// Result handler for write serial port
+    pub write_result_handler: Option<ResultHandler>,
+}
+
+impl std::fmt::Debug for SerialSetting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SerialSetting")
+            .field("label", &self.label)
+            .field("port_name", &self.port_name)
+            .field("baud_rate", &self.baud_rate)
+            .field("data_bits", &self.data_bits)
+            .field("flow_control", &self.flow_control)
+            .field("parity", &self.parity)
+            .field("stop_bits", &self.stop_bits)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl Default for SerialSetting {
@@ -171,6 +197,8 @@ impl Default for SerialSetting {
             parity: Parity::None,
             stop_bits: StopBits::One,
             timeout: Duration::from_millis(0),
+            read_result_handler: None,
+            write_result_handler: None,
         }
     }
 }
@@ -193,6 +221,10 @@ struct SerialStreamLabeled {
 
 /// Module scope global singleton to store serial ports
 static SERIALS: OnceCell<Vec<Mutex<SerialStreamLabeled>>> = OnceCell::new();
+/// Module scope global singleton to store read serial result handler
+static READ_RESULT_HANDLERS: OnceCell<HashMap<String, Option<ResultHandler>>> = OnceCell::new();
+/// Module scope global singleton to store write serial result handler
+static WRITE_RESULT_HANDLERS: OnceCell<HashMap<String, Option<ResultHandler>>> = OnceCell::new();
 
 /// Context to poll serial read event with `Poll` in `mio` crate
 #[derive(Resource)]
@@ -216,6 +248,9 @@ impl MioContext {
 #[derive(Resource)]
 struct Indices(HashMap<String, usize>);
 
+/// Serial read/write results passed to the error handler
+type ReadWriteResults = HashMap<String, Result<usize, std::io::Error>>;
+
 /// The size of read buffer for one read system call
 const DEFAULT_READ_BUFFER_LEN: usize = 2048;
 
@@ -225,6 +260,8 @@ impl Plugin for SerialPlugin {
         let events = Events::with_capacity(self.settings.len());
         let mio_ctx = MioContext { poll, events };
         let mut serials: Vec<Mutex<SerialStreamLabeled>> = vec![];
+        let mut read_result_handlers: HashMap<String, Option<ResultHandler>> = HashMap::new();
+        let mut write_result_handlers: HashMap<String, Option<ResultHandler>> = HashMap::new();
         let mut indices = Indices(HashMap::new());
 
         for (i, setting) in self.settings.iter().enumerate() {
@@ -238,7 +275,7 @@ impl Plugin for SerialPlugin {
 
             // create `mio_serial::SerailStream` from `seriaport` builder
             let mut stream = SerialStream::open(&port_builder).unwrap_or_else(|e| {
-                panic!("Failed to open serial port {}\n{:?}", setting.port_name, e);
+                panic!("Failed to open serial port {}: {:?}", setting.port_name, e);
             });
 
             // token index is same as index of vec
@@ -258,8 +295,11 @@ impl Plugin for SerialPlugin {
                 setting.port_name.clone()
             };
 
-            // store indices and serials
+            // store indices (resource)
             indices.0.insert(label.clone(), i);
+            // store serials and result handlers (global variables)
+            read_result_handlers.insert(label.clone(), setting.read_result_handler.clone());
+            write_result_handlers.insert(label.clone(), setting.write_result_handler.clone());
             serials.push(Mutex::new(SerialStreamLabeled {
                 stream,
                 label,
@@ -271,13 +311,23 @@ impl Plugin for SerialPlugin {
         SERIALS.set(serials).unwrap_or_else(|e| {
             panic!("Failed to set SerialStream to global variable: {e:?}");
         });
+        READ_RESULT_HANDLERS
+            .set(read_result_handlers)
+            .unwrap_or_else(|_| {
+                panic!("Failed to set read result handler to global variable");
+            });
+        WRITE_RESULT_HANDLERS
+            .set(write_result_handlers)
+            .unwrap_or_else(|_| {
+                panic!("Failed to set write result handler to global variable");
+            });
 
         app.insert_resource(mio_ctx)
             .insert_resource(indices)
             .add_event::<SerialReadEvent>()
             .add_event::<SerialWriteEvent>()
-            .add_systems(PreUpdate, read_serial)
-            .add_systems(PostUpdate, write_serial);
+            .add_systems(PreUpdate, read_serial.pipe(read_serial_result_handler))
+            .add_systems(PostUpdate, write_serial.pipe(write_serial_result_handler));
     }
 }
 
@@ -287,7 +337,8 @@ fn read_serial(
     mut ev_receive_serial: EventWriter<SerialReadEvent>,
     mut mio_ctx: ResMut<MioContext>,
     indices: Res<Indices>,
-) {
+) -> ReadWriteResults {
+    let mut read_results = ReadWriteResults::new();
     if !indices.0.is_empty() {
         // poll serial read events
         mio_ctx.poll();
@@ -309,8 +360,15 @@ fn read_serial(
                         if serial.connected {
                             match serial.stream.read(&mut buffer[bytes_read..]) {
                                 Ok(0) => {
-                                    eprintln!("read connection closed");
+                                    eprintln!("{} connection maybe closed", serial.label);
                                     serial.connected = false;
+                                    read_results.insert(
+                                        serial.label.clone(),
+                                        Err(std::io::Error::new(
+                                            ErrorKind::NotConnected,
+                                            "Maybe connection closed",
+                                        )),
+                                    );
                                     break;
                                 }
                                 // read data successfully
@@ -320,12 +378,14 @@ fn read_serial(
                                     if bytes_read == buffer.len() {
                                         buffer.resize(buffer.len() + DEFAULT_READ_BUFFER_LEN, 0);
                                     }
+                                    continue;
                                 }
                                 // would block indicates no more data to read
                                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                                     let label = serial.label.clone();
                                     let buffer = buffer.drain(..bytes_read).collect();
                                     ev_receive_serial.send(SerialReadEvent(label, buffer));
+                                    read_results.insert(serial.label.clone(), Ok(bytes_read));
                                     break;
                                 }
                                 // if interrupted, we should continue readings
@@ -335,26 +395,55 @@ fn read_serial(
                                 // other errors are fatal
                                 Err(e) => {
                                     eprintln!("Failed to read serial port {}: {}", serial.label, e);
+                                    read_results.insert(serial.label.clone(), Err(e));
+                                    break;
                                 }
                             }
                         } else {
                             eprintln!("{} connection has closed", serial.label);
+                            read_results.insert(
+                                serial.label.clone(),
+                                Err(std::io::Error::new(
+                                    ErrorKind::NotConnected,
+                                    "Not connected",
+                                )),
+                            );
+                            break;
                         }
                     }
                 }
             }
         }
     }
+    read_results
+}
+
+/// Read serial result handler to handle read results
+/// This system is piped with `read_serial` system
+fn read_serial_result_handler(In(result): In<ReadWriteResults>) {
+    let read_error_handlers = READ_RESULT_HANDLERS
+        .get()
+        .expect("READ_ERROR_HANDLERS are not initialized");
+
+    for (label, result) in result.iter() {
+        if let Some(Some(handler)) = read_error_handlers.get(label) {
+            handler(label, result);
+        }
+    }
 }
 
 /// Write bytes to serial port.
 /// The bytes are sent via `SerialWriteEvent` with label of serial port.
-fn write_serial(mut ev_write_serial: EventReader<SerialWriteEvent>, indices: Res<Indices>) {
+fn write_serial(
+    mut ev_write_serial: EventReader<SerialWriteEvent>,
+    indices: Res<Indices>,
+) -> ReadWriteResults {
+    let mut rw_results = ReadWriteResults::new();
     if !indices.0.is_empty() {
         for SerialWriteEvent(label, buffer) in ev_write_serial.read() {
             // get index of label
             let &serial_index = indices.0.get(label).unwrap_or_else(|| {
-                panic!("Label {} is not exist", label.as_str());
+                panic!("{} is not exist", label.as_str());
             });
             let serials = SERIALS.get().expect("SERIALS are not initialized");
             let serial_mtx = serials
@@ -371,11 +460,6 @@ fn write_serial(mut ev_write_serial: EventReader<SerialWriteEvent>, indices: Res
                         match serial.stream.write(&buffer[bytes_wrote..]) {
                             // error if returned len is less than expected (same as `io::Write::write_all` does)
                             Ok(n) if n < buffer.len() => {
-                                eprintln!(
-                                    "write size error {} / {}",
-                                    n,
-                                    buffer.len() - bytes_wrote
-                                );
                                 bytes_wrote += n;
                             }
                             // wrote queued data successfully
@@ -389,19 +473,45 @@ fn write_serial(mut ev_write_serial: EventReader<SerialWriteEvent>, indices: Res
                             // other errors are fatal
                             Err(e) => {
                                 eprintln!("Failed to write serial port {}: {}", serial.label, e);
+                                rw_results.insert(serial.label.clone(), Err(e));
+                                break;
                             }
                         }
                     } else {
                         eprintln!("{} connection has closed", serial.label);
+                        rw_results.insert(
+                            serial.label.clone(),
+                            Err(std::io::Error::new(
+                                ErrorKind::NotConnected,
+                                "Not connected",
+                            )),
+                        );
+                        break;
                     }
 
                     if bytes_wrote == buffer.len() {
+                        rw_results.insert(serial.label.clone(), Ok(bytes_wrote));
                         break;
                     } else {
                         continue;
                     }
                 }
             }
+        }
+    }
+    rw_results
+}
+
+/// Write serial result handler to handle write results
+/// This system is piped with `write_serial` system
+fn write_serial_result_handler(In(result): In<ReadWriteResults>) {
+    let write_error_handlers = WRITE_RESULT_HANDLERS
+        .get()
+        .expect("WRITE_ERROR_HANDLERS are not initialized");
+
+    for (label, result) in result.iter() {
+        if let Some(Some(handler)) = write_error_handlers.get(label) {
+            handler(label, result);
         }
     }
 }
