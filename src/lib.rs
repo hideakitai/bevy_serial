@@ -34,8 +34,8 @@
 //!             TimerMode::Repeating,
 //!         )))
 //!         // reading and writing from/to serial port is achieved via bevy's event system
-//!         .add_systems(Update, read_serial.pipe(read_serial_result_handler))
-//!         .add_systems(Update, write_serial.pipe(write_serial_result_handler))
+//!         .add_systems(Update, read_serial)
+//!         .add_systems(Update, write_serial)
 //!         .run();
 //! }
 //!
@@ -72,18 +72,23 @@
 //!     App::new()
 //!         .add_plugins(MinimalPlugins)
 //!         // you can specify various configurations for multiple serial ports by this way
-//!         .add_plugins(SerialPlugin {
-//!             config: vec![SerialConfig {
-//!                 label: Some(SERIAL_LABEL.to_string()),
-//!                 port_name: SERIAL_PORT.to_string(),
-//!                 baud_rate: 115200,
-//!                 data_bits: DataBits::Eight,
-//!                 flow_control: FlowControl::None,
-//!                 parity: Parity::None,
-//!                 stop_bits: StopBits::One,
-//!                 timeout: Duration::from_millis(0),
-//!             }],
-//!         })
+//!         .add_plugins(SerialPlugin::new_with_config(vec![SerialConfig {
+//!             label: Some(SERIAL_LABEL.to_string()),
+//!             port_name: SERIAL_PORT.to_string(),
+//!             baud_rate: 115200,
+//!             data_bits: DataBits::Eight,
+//!             flow_control: FlowControl::None,
+//!             parity: Parity::None,
+//!             stop_bits: StopBits::One,
+//!             timeout: Duration::from_millis(0),
+//!             read_buffer_len: 2048,
+//!             read_result_handler: Some(Arc::new(|label, result| {
+//!                 println!("Read result of {label}: {result:?}");
+//!             })),
+//!             write_result_handler: Some(Arc::new(|label, result| {
+//!                 println!("Write result of {label}: {result:?}");
+//!             })),
+//!         }]))
 //!         // reading and writing from/to serial port is achieved via bevy's event system
 //!         .add_systems(Update, read_serial)
 //!         .add_systems(Update, write_serial)
@@ -95,7 +100,7 @@
 //!
 //! | bevy  | bevy_serial |
 //! | ----- | ----------- |
-//! | 0.13  | 0.5         |
+//! | 0.13  | 0.5, 0.6    |
 //! | 0.12  | 0.4         |
 //! | 0.11  | 0.3         |
 //! | 0.6   | 0.2         |
