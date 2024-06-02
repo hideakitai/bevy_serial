@@ -359,11 +359,11 @@ fn read_serial(
             .get(event.token().0) // token index is same as index of vec
             .expect(&format!("SERIALS index {} not found", event.token().0));
 
-        loop {
-            // try to get lock of mutex and send data to event
-            if let Ok(mut serial) = serial_mtx.lock() {
-                let mut buffer = vec![0_u8; serial.read_buffer_len];
-                let mut bytes_read = 0;
+        // try to get lock of mutex and send data to event
+        if let Ok(mut serial) = serial_mtx.lock() {
+            let mut buffer = vec![0_u8; serial.read_buffer_len];
+            let mut bytes_read = 0;
+            loop {
                 match serial.stream.read(&mut buffer[bytes_read..]) {
                     Ok(0) => {
                         eprintln!("{} connection maybe closed", serial.label);
@@ -445,11 +445,11 @@ fn write_serial(
             .get(serial_index)
             .expect(&format!("SERIALS index {serial_index} not found"));
 
-        // write buffered data to serial
-        let mut bytes_wrote = 0;
-        loop {
-            // try to get lock of mutex and send data to event
-            if let Ok(mut serial) = serial_mtx.lock() {
+        // try to get lock of mutex and send data to event
+        if let Ok(mut serial) = serial_mtx.lock() {
+            // write buffered data to serial
+            let mut bytes_wrote = 0;
+            loop {
                 // write the entire buffered data in a single system call
                 match serial.stream.write(&buffer[bytes_wrote..]) {
                     // error if returned len is less than expected (same as `io::Write::write_all` does)
