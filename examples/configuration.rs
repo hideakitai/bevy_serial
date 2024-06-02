@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 use bevy_serial::{
-    DataBits, FlowControl, Parity, SerialPlugin, SerialReadEvent, SerialSetting, SerialWriteEvent,
+    DataBits, FlowControl, Parity, SerialConfig, SerialPlugin, SerialReadEvent, SerialWriteEvent,
     StopBits,
 };
+use std::sync::Arc;
 use std::time::Duration;
 
 // to write data to serial port periodically
@@ -16,18 +17,23 @@ fn main() {
     App::new()
         .add_plugins(MinimalPlugins)
         // you can specify various configurations for multiple serial ports by this way
-        .add_plugins(SerialPlugin {
-            settings: vec![SerialSetting {
-                label: Some(SERIAL_LABEL.to_string()),
-                port_name: SERIAL_PORT.to_string(),
-                baud_rate: 115200,
-                data_bits: DataBits::Eight,
-                flow_control: FlowControl::None,
-                parity: Parity::None,
-                stop_bits: StopBits::One,
-                timeout: Duration::from_millis(0),
-            }],
-        })
+        .add_plugins(SerialPlugin::new_with_config(vec![SerialConfig {
+            label: Some(SERIAL_LABEL.to_string()),
+            port_name: SERIAL_PORT.to_string(),
+            baud_rate: 115200,
+            data_bits: DataBits::Eight,
+            flow_control: FlowControl::None,
+            parity: Parity::None,
+            stop_bits: StopBits::One,
+            timeout: Duration::from_millis(0),
+            read_buffer_len: 2048,
+            read_result_handler: Some(Arc::new(|label, result| {
+                println!("Read result of {label}: {result:?}");
+            })),
+            write_result_handler: Some(Arc::new(|label, result| {
+                println!("Write result of {label}: {result:?}");
+            })),
+        }]))
         // to write data to serial port periodically (every 1 second)
         .insert_resource(SerialWriteTimer(Timer::from_seconds(
             1.0,
@@ -44,7 +50,7 @@ fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
     // you can get label of the port and received data buffer from `SerialReadEvent`
     for SerialReadEvent(label, buffer) in ev_serial.read() {
         let s = String::from_utf8(buffer.clone()).unwrap();
-        println!("read packet from {label}: {s}");
+        println!("Received packet from {label}: {s}");
     }
 }
 
