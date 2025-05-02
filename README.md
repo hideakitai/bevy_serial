@@ -96,6 +96,22 @@ fn main() {
 }
 ```
 
+## Development
+
+### pre-commit hooks
+
+Install [`pre-commit`](https://pre-commit.com/) and hooks (pre-commit/pre-push) hooks if you need:
+
+```shell
+pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
+To uninstall:
+
+```shell
+pre-commit uninstall --hook-type pre-commit --hook-type pre-push
+```
+
 ## Supported Versions
 
 | bevy | bevy_serial |
