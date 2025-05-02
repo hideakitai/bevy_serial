@@ -398,7 +398,7 @@ fn read_serial(
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         let label = serial.label.clone();
                         let buffer = buffer.drain(..bytes_read).collect();
-                        ev_receive_serial.send(SerialReadEvent(label, buffer));
+                        ev_receive_serial.write(SerialReadEvent(label, buffer));
                         read_results.insert(serial.label.clone(), Ok(bytes_read));
                         break;
                     }
