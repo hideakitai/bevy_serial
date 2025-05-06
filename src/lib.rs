@@ -68,38 +68,37 @@
 //! You can add multiple serial ports with additional config.
 //!
 //! ```rust
-//! fn main() {
-//!     App::new()
-//!         .add_plugins(MinimalPlugins)
-//!         // you can specify various configurations for multiple serial ports by this way
-//!         .add_plugins(SerialPlugin::new_with_config(vec![SerialConfig {
-//!             label: Some(SERIAL_LABEL.to_string()),
-//!             port_name: SERIAL_PORT.to_string(),
-//!             baud_rate: 115200,
-//!             data_bits: DataBits::Eight,
-//!             flow_control: FlowControl::None,
-//!             parity: Parity::None,
-//!             stop_bits: StopBits::One,
-//!             timeout: Duration::from_millis(0),
-//!             read_buffer_len: 2048,
-//!             read_result_handler: Some(Arc::new(|label, result| {
-//!                 println!("Read result of {label}: {result:?}");
-//!             })),
-//!             write_result_handler: Some(Arc::new(|label, result| {
-//!                 println!("Write result of {label}: {result:?}");
-//!             })),
-//!         }]))
-//!         // reading and writing from/to serial port is achieved via bevy's event system
-//!         .add_systems(Update, read_serial)
-//!         .add_systems(Update, write_serial)
-//!         .run();
-//! }
+//! App::new()
+//!     .add_plugins(MinimalPlugins)
+//!     // you can specify various configurations for multiple serial ports by this way
+//!     .add_plugins(SerialPlugin::new_with_config(vec![SerialConfig {
+//!         label: Some(SERIAL_LABEL.to_string()),
+//!         port_name: SERIAL_PORT.to_string(),
+//!         baud_rate: 115200,
+//!         data_bits: DataBits::Eight,
+//!         flow_control: FlowControl::None,
+//!         parity: Parity::None,
+//!         stop_bits: StopBits::One,
+//!         timeout: Duration::from_millis(0),
+//!         read_buffer_len: 2048,
+//!         read_result_handler: Some(Arc::new(|label, result| {
+//!             println!("Read result of {label}: {result:?}");
+//!         })),
+//!         write_result_handler: Some(Arc::new(|label, result| {
+//!             println!("Write result of {label}: {result:?}");
+//!         })),
+//!     }]))
+//!     // reading and writing from/to serial port is achieved via bevy's event system
+//!     .add_systems(Update, read_serial)
+//!     .add_systems(Update, write_serial)
+//!     .run();
 //! ```
 //!
 //! ## Supported Versions
 //!
 //! | bevy  | bevy_serial |
 //! | ----- | ----------- |
+//! | 0.16  | 0.9         |
 //! | 0.15  | 0.8         |
 //! | 0.14  | 0.7         |
 //! | 0.13  | 0.5, 0.6    |
@@ -119,7 +118,8 @@ pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
 use bevy::app::{App, Plugin, PostUpdate, PreUpdate};
 use bevy::ecs::event::{Event, EventReader, EventWriter};
-use bevy::ecs::system::{In, IntoSystem, Res, ResMut, Resource};
+use bevy::ecs::resource::Resource;
+use bevy::ecs::system::{In, IntoSystem, Res, ResMut};
 use mio::{Events, Interest, Poll, Token};
 use mio_serial::SerialStream;
 use once_cell::sync::OnceCell;
@@ -364,7 +364,7 @@ fn read_serial(
         let serials = SERIALS.get().expect("SERIALS are not initialized");
         let serial_mtx = serials
             .get(event.token().0) // token index is same as index of vec
-            .expect(&format!("SERIALS index {} not found", event.token().0));
+            .unwrap_or_else(|| panic!("SERIALS index {} not found", event.token().0));
 
         // try to get lock of mutex and send data to event
         if let Ok(mut serial) = serial_mtx.lock() {
@@ -396,7 +396,7 @@ fn read_serial(
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         let label = serial.label.clone();
                         let buffer = buffer.drain(..bytes_read).collect();
-                        ev_receive_serial.send(SerialReadEvent(label, buffer));
+                        ev_receive_serial.write(SerialReadEvent(label, buffer));
                         read_results.insert(serial.label.clone(), Ok(bytes_read));
                         break;
                     }
@@ -450,7 +450,7 @@ fn write_serial(
         let serials = SERIALS.get().expect("SERIALS are not initialized");
         let serial_mtx = serials
             .get(serial_index)
-            .expect(&format!("SERIALS index {serial_index} not found"));
+            .unwrap_or_else(|| panic!("SERIALS index {serial_index} not found"));
 
         // try to get lock of mutex and send data to event
         if let Ok(mut serial) = serial_mtx.lock() {

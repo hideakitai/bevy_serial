@@ -64,6 +64,6 @@ fn write_serial(
     if timer.0.tick(time.delta()).just_finished() {
         // you can write to serial port via `SerialWriteEvent` with label and buffer to write
         let buffer = b"Hello, bevy!";
-        ev_serial.send(SerialWriteEvent(SERIAL_LABEL.to_string(), buffer.to_vec()));
+        ev_serial.write(SerialWriteEvent(SERIAL_LABEL.to_string(), buffer.to_vec()));
     }
 }
