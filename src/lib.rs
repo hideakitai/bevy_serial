@@ -192,13 +192,13 @@ impl Default for SerialConfig {
     }
 }
 
-/// Bevy's event type to read serial port
+/// bevy::message::Message to read serial port
 #[derive(Message)]
-pub struct SerialReadEvent(pub String, pub Vec<u8>);
+pub struct SerialReadMessage(pub String, pub Vec<u8>);
 
-/// Bevy's event type to read serial port
+/// bevy::message::Message to write to serial port
 #[derive(Message)]
-pub struct SerialWriteEvent(pub String, pub Vec<u8>);
+pub struct SerialWriteMessage(pub String, pub Vec<u8>);
 
 /// Serial struct that is used internally for this crate
 #[derive(Debug)]
@@ -332,17 +332,17 @@ impl Plugin for SerialPlugin {
 
         app.insert_resource(mio_ctx)
             .insert_resource(indices)
-            .add_message::<SerialReadEvent>()
-            .add_message::<SerialWriteEvent>()
+            .add_message::<SerialReadMessage>()
+            .add_message::<SerialWriteMessage>()
             .add_systems(PreUpdate, read_serial.pipe(read_serial_result_handler))
             .add_systems(PostUpdate, write_serial.pipe(write_serial_result_handler));
     }
 }
 
 /// Poll serial read event with `Poll` in `mio` crate.
-/// If any data has come to serial, `SerialReadEvent` is sent to the system subscribing it.
+/// If any data has come to serial, `SerialReadMessage` is sent to the system subscribing it.
 fn read_serial(
-    mut ev_receive_serial: MessageWriter<SerialReadEvent>,
+    mut writer: MessageWriter<SerialReadMessage>,
     mut mio_ctx: ResMut<MioContext>,
     indices: Res<Indices>,
 ) -> ReadWriteResults {
@@ -353,7 +353,7 @@ fn read_serial(
     // poll serial read events
     mio_ctx.poll();
 
-    // if events have occurred, send `SerialReadEvent` with serial labels and read data buffer
+    // if events have occurred, send `SerialReadMessage` with serial labels and read data buffer
     let mut read_results = ReadWriteResults::new();
     for event in mio_ctx.events.iter() {
         if !event.is_readable() {
@@ -396,7 +396,7 @@ fn read_serial(
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         let label = serial.label.clone();
                         let buffer = buffer.drain(..bytes_read).collect();
-                        ev_receive_serial.write(SerialReadEvent(label, buffer));
+                        writer.write(SerialReadMessage(label, buffer));
                         read_results.insert(serial.label.clone(), Ok(bytes_read));
                         break;
                     }
@@ -432,9 +432,9 @@ fn read_serial_result_handler(In(result): In<ReadWriteResults>) {
 }
 
 /// Write bytes to serial port.
-/// The bytes are sent via `SerialWriteEvent` with label of serial port.
+/// The bytes are sent via `SerialWriteMessage` with label of serial port.
 fn write_serial(
-    mut ev_write_serial: MessageReader<SerialWriteEvent>,
+    mut reader: MessageReader<SerialWriteMessage>,
     indices: Res<Indices>,
 ) -> ReadWriteResults {
     if indices.0.is_empty() {
@@ -442,7 +442,7 @@ fn write_serial(
     }
 
     let mut rw_results = ReadWriteResults::new();
-    for SerialWriteEvent(label, buffer) in ev_write_serial.read() {
+    for SerialWriteMessage(label, buffer) in reader.read() {
         // get index of label
         let &serial_index = indices.0.get(label).unwrap_or_else(|| {
             panic!("{} is not exist", label.as_str());
