@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_serial::{
-    DataBits, FlowControl, Parity, SerialConfig, SerialPlugin, SerialReadEvent, SerialWriteEvent,
-    StopBits,
+    DataBits, FlowControl, Parity, SerialConfig, SerialPlugin, SerialReadMessage,
+    SerialWriteMessage, StopBits,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,9 +46,9 @@ fn main() {
 }
 
 // reading event for serial port
-fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
-    // you can get label of the port and received data buffer from `SerialReadEvent`
-    for SerialReadEvent(label, buffer) in ev_serial.read() {
+fn read_serial(mut reader: MessageReader<SerialReadMessage>) {
+    // you can get label of the port and received data buffer from `SerialReadMessage`
+    for SerialReadMessage(label, buffer) in reader.read() {
         let s = String::from_utf8(buffer.clone()).unwrap();
         println!("Received packet from {label}: {s}");
     }
@@ -56,14 +56,17 @@ fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
 
 // writing event for serial port
 fn write_serial(
-    mut ev_serial: EventWriter<SerialWriteEvent>,
+    mut writer: MessageWriter<SerialWriteMessage>,
     mut timer: ResMut<SerialWriteTimer>,
     time: Res<Time>,
 ) {
     // write msg to serial port every 1 second not to flood serial port
     if timer.0.tick(time.delta()).just_finished() {
-        // you can write to serial port via `SerialWriteEvent` with label and buffer to write
+        // you can write to serial port via `SerialWriteMessage` with label and buffer to write
         let buffer = b"Hello, bevy!";
-        ev_serial.write(SerialWriteEvent(SERIAL_LABEL.to_string(), buffer.to_vec()));
+        writer.write(SerialWriteMessage(
+            SERIAL_LABEL.to_string(),
+            buffer.to_vec(),
+        ));
     }
 }

@@ -15,7 +15,7 @@
 //!
 //! ```rust
 //! use bevy::prelude::*;
-//! use bevy_serial::{SerialPlugin, SerialReadEvent, SerialWriteEvent};
+//! use bevy_serial::{SerialPlugin, SerialReadMessage, SerialWriteMessage};
 //!
 //! // to write data to serial port periodically
 //! #[derive(Resource)]
@@ -40,25 +40,25 @@
 //! }
 //!
 //! // reading event for serial port
-//! fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
-//!     // you can get label of the port and received data buffer from `SerialReadEvent`
-//!     for SerialReadEvent(label, buffer) in ev_serial.read() {
+//! fn read_serial(mut reader: MessageReader<SerialReadMessage>) {
+//!     // you can get label of the port and received data buffer from `SerialReadMessage`
+//!     for SerialReadMessage(label, buffer) in reader.read() {
 //!         let s = String::from_utf8(buffer.clone()).unwrap();
-//!         println!("received packet from {label}: {s}");
+//!         println!("Received packet from {label}: {s}");
 //!     }
 //! }
 //!
 //! // writing event for serial port
 //! fn write_serial(
-//!     mut ev_serial: EventWriter<SerialWriteEvent>,
+//!     mut writer: MessageWriter<SerialWriteMessage>,
 //!     mut timer: ResMut<SerialWriteTimer>,
 //!     time: Res<Time>,
 //! ) {
 //!     // write msg to serial port every 1 second not to flood serial port
 //!     if timer.0.tick(time.delta()).just_finished() {
-//!         // you can write to serial port via `SerialWriteEvent` with label and buffer to write
+//!         // you can write to serial port via `SerialWriteMessage` with label and buffer to write
 //!         let buffer = b"Hello, bevy!";
-//!         ev_serial.send(SerialWriteEvent(SERIAL_PORT.to_string(), buffer.to_vec()));
+//!         writer.write(SerialWriteMessage(SERIAL_PORT.to_string(), buffer.to_vec()));
 //!     }
 //! }
 //! ```
@@ -94,18 +94,35 @@
 //!     .run();
 //! ```
 //!
+//! ## Development
+//!
+//! ### pre-commit hooks
+//!
+//! Install [`pre-commit`](https://pre-commit.com/) and hooks (pre-commit/pre-push) hooks if you need:
+//!
+//! ```shell
+//! pre-commit install --hook-type pre-commit --hook-type pre-push
+//! ```
+//!
+//! To uninstall:
+//!
+//! ```shell
+//! pre-commit uninstall --hook-type pre-commit --hook-type pre-push
+//! ```
+//!
 //! ## Supported Versions
 //!
-//! | bevy  | bevy_serial |
-//! | ----- | ----------- |
-//! | 0.16  | 0.9         |
-//! | 0.15  | 0.8         |
-//! | 0.14  | 0.7         |
-//! | 0.13  | 0.5, 0.6    |
-//! | 0.12  | 0.4         |
-//! | 0.11  | 0.3         |
-//! | 0.6   | 0.2         |
-//! | 0.5   | 0.1         |
+//! | bevy | bevy_serial |
+//! | ---- | ----------- |
+//! | 0.17 | 0.10        |
+//! | 0.16 | 0.9         |
+//! | 0.15 | 0.8         |
+//! | 0.14 | 0.7         |
+//! | 0.13 | 0.5, 0.6    |
+//! | 0.12 | 0.4         |
+//! | 0.11 | 0.3         |
+//! | 0.6  | 0.2         |
+//! | 0.5  | 0.1         |
 //!
 //! ## License
 //!
@@ -117,7 +134,7 @@
 pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
 use bevy::app::{App, Plugin, PostUpdate, PreUpdate};
-use bevy::ecs::event::{Event, EventReader, EventWriter};
+use bevy::ecs::message::{Message, MessageReader, MessageWriter};
 use bevy::ecs::resource::Resource;
 use bevy::ecs::system::{In, IntoSystem, Res, ResMut};
 use mio::{Events, Interest, Poll, Token};
@@ -192,13 +209,13 @@ impl Default for SerialConfig {
     }
 }
 
-/// Bevy's event type to read serial port
-#[derive(Event)]
-pub struct SerialReadEvent(pub String, pub Vec<u8>);
+/// bevy::message::Message to read serial port
+#[derive(Message)]
+pub struct SerialReadMessage(pub String, pub Vec<u8>);
 
-/// Bevy's event type to read serial port
-#[derive(Event)]
-pub struct SerialWriteEvent(pub String, pub Vec<u8>);
+/// bevy::message::Message to write to serial port
+#[derive(Message)]
+pub struct SerialWriteMessage(pub String, pub Vec<u8>);
 
 /// Serial struct that is used internally for this crate
 #[derive(Debug)]
@@ -332,17 +349,17 @@ impl Plugin for SerialPlugin {
 
         app.insert_resource(mio_ctx)
             .insert_resource(indices)
-            .add_event::<SerialReadEvent>()
-            .add_event::<SerialWriteEvent>()
+            .add_message::<SerialReadMessage>()
+            .add_message::<SerialWriteMessage>()
             .add_systems(PreUpdate, read_serial.pipe(read_serial_result_handler))
             .add_systems(PostUpdate, write_serial.pipe(write_serial_result_handler));
     }
 }
 
 /// Poll serial read event with `Poll` in `mio` crate.
-/// If any data has come to serial, `SerialReadEvent` is sent to the system subscribing it.
+/// If any data has come to serial, `SerialReadMessage` is sent to the system subscribing it.
 fn read_serial(
-    mut ev_receive_serial: EventWriter<SerialReadEvent>,
+    mut writer: MessageWriter<SerialReadMessage>,
     mut mio_ctx: ResMut<MioContext>,
     indices: Res<Indices>,
 ) -> ReadWriteResults {
@@ -353,7 +370,7 @@ fn read_serial(
     // poll serial read events
     mio_ctx.poll();
 
-    // if events have occurred, send `SerialReadEvent` with serial labels and read data buffer
+    // if events have occurred, send `SerialReadMessage` with serial labels and read data buffer
     let mut read_results = ReadWriteResults::new();
     for event in mio_ctx.events.iter() {
         if !event.is_readable() {
@@ -396,7 +413,7 @@ fn read_serial(
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         let label = serial.label.clone();
                         let buffer = buffer.drain(..bytes_read).collect();
-                        ev_receive_serial.write(SerialReadEvent(label, buffer));
+                        writer.write(SerialReadMessage(label, buffer));
                         read_results.insert(serial.label.clone(), Ok(bytes_read));
                         break;
                     }
@@ -432,9 +449,9 @@ fn read_serial_result_handler(In(result): In<ReadWriteResults>) {
 }
 
 /// Write bytes to serial port.
-/// The bytes are sent via `SerialWriteEvent` with label of serial port.
+/// The bytes are sent via `SerialWriteMessage` with label of serial port.
 fn write_serial(
-    mut ev_write_serial: EventReader<SerialWriteEvent>,
+    mut reader: MessageReader<SerialWriteMessage>,
     indices: Res<Indices>,
 ) -> ReadWriteResults {
     if indices.0.is_empty() {
@@ -442,7 +459,7 @@ fn write_serial(
     }
 
     let mut rw_results = ReadWriteResults::new();
-    for SerialWriteEvent(label, buffer) in ev_write_serial.read() {
+    for SerialWriteMessage(label, buffer) in reader.read() {
         // get index of label
         let &serial_index = indices.0.get(label).unwrap_or_else(|| {
             panic!("{} is not exist", label.as_str());

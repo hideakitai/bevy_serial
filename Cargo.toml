@@ -1,6 +1,6 @@
 [package]
 name = "bevy_serial"
-version = "0.9.0"
+version = "0.10.0"
 authors = ["Hideaki Tai <hideaki.tai@gmail.com>"]
 edition = "2024"
 description = "Serial Port Communication Plugin for Bevy"
@@ -11,11 +11,11 @@ keywords = ["bevy", "io", "hardware", "serial", "mio"]
 categories = ["game-development", "hardware-support"]
 
 [dependencies]
-serialport = "4.7.1"
+serialport = "4.7.3"
 mio = "1.0.3"
 mio-serial = "5.0.6"
 once_cell = "1.21.3"
 
 [dependencies.bevy]
-version = "0.16"
+version = "0.17"
 default-features = false
