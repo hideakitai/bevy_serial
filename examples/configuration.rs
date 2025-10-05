@@ -46,7 +46,7 @@ fn main() {
 }
 
 // reading event for serial port
-fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
+fn read_serial(mut ev_serial: MessageReader<SerialReadEvent>) {
     // you can get label of the port and received data buffer from `SerialReadEvent`
     for SerialReadEvent(label, buffer) in ev_serial.read() {
         let s = String::from_utf8(buffer.clone()).unwrap();
@@ -56,7 +56,7 @@ fn read_serial(mut ev_serial: EventReader<SerialReadEvent>) {
 
 // writing event for serial port
 fn write_serial(
-    mut ev_serial: EventWriter<SerialWriteEvent>,
+    mut ev_serial: MessageWriter<SerialWriteEvent>,
     mut timer: ResMut<SerialWriteTimer>,
     time: Res<Time>,
 ) {

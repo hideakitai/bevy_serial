@@ -117,7 +117,7 @@
 pub use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 
 use bevy::app::{App, Plugin, PostUpdate, PreUpdate};
-use bevy::ecs::event::{Event, EventReader, EventWriter};
+use bevy::ecs::message::{Message, MessageReader, MessageWriter};
 use bevy::ecs::resource::Resource;
 use bevy::ecs::system::{In, IntoSystem, Res, ResMut};
 use mio::{Events, Interest, Poll, Token};
@@ -193,11 +193,11 @@ impl Default for SerialConfig {
 }
 
 /// Bevy's event type to read serial port
-#[derive(Event)]
+#[derive(Message)]
 pub struct SerialReadEvent(pub String, pub Vec<u8>);
 
 /// Bevy's event type to read serial port
-#[derive(Event)]
+#[derive(Message)]
 pub struct SerialWriteEvent(pub String, pub Vec<u8>);
 
 /// Serial struct that is used internally for this crate
@@ -332,8 +332,8 @@ impl Plugin for SerialPlugin {
 
         app.insert_resource(mio_ctx)
             .insert_resource(indices)
-            .add_event::<SerialReadEvent>()
-            .add_event::<SerialWriteEvent>()
+            .add_message::<SerialReadEvent>()
+            .add_message::<SerialWriteEvent>()
             .add_systems(PreUpdate, read_serial.pipe(read_serial_result_handler))
             .add_systems(PostUpdate, write_serial.pipe(write_serial_result_handler));
     }
@@ -342,7 +342,7 @@ impl Plugin for SerialPlugin {
 /// Poll serial read event with `Poll` in `mio` crate.
 /// If any data has come to serial, `SerialReadEvent` is sent to the system subscribing it.
 fn read_serial(
-    mut ev_receive_serial: EventWriter<SerialReadEvent>,
+    mut ev_receive_serial: MessageWriter<SerialReadEvent>,
     mut mio_ctx: ResMut<MioContext>,
     indices: Res<Indices>,
 ) -> ReadWriteResults {
@@ -434,7 +434,7 @@ fn read_serial_result_handler(In(result): In<ReadWriteResults>) {
 /// Write bytes to serial port.
 /// The bytes are sent via `SerialWriteEvent` with label of serial port.
 fn write_serial(
-    mut ev_write_serial: EventReader<SerialWriteEvent>,
+    mut ev_write_serial: MessageReader<SerialWriteEvent>,
     indices: Res<Indices>,
 ) -> ReadWriteResults {
     if indices.0.is_empty() {
