@@ -114,6 +114,7 @@ pre-commit uninstall --hook-type pre-commit --hook-type pre-push
 
 | bevy | bevy_serial |
 | ---- | ----------- |
+| 0.19 | 0.12        |
 | 0.18 | 0.11        |
 | 0.17 | 0.10        |
 | 0.16 | 0.9         |
