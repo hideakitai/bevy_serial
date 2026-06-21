@@ -13,7 +13,7 @@
 //!
 //! Here is a simple example:
 //!
-//! ```rust
+//! ```rust,no_run
 //! use bevy::prelude::*;
 //! use bevy_serial::{SerialPlugin, SerialReadMessage, SerialWriteMessage};
 //!
@@ -67,7 +67,19 @@
 //!
 //! You can add multiple serial ports with additional config.
 //!
-//! ```rust
+//! ```rust,no_run
+//! # use bevy::prelude::*;
+//! # use bevy_serial::{
+//! #     DataBits, FlowControl, Parity, SerialConfig, SerialPlugin, SerialReadMessage, StopBits,
+//! # };
+//! # use std::sync::Arc;
+//! # use std::time::Duration;
+//! # const SERIAL_PORT: &str = "/dev/ttyUSB0";
+//! # const SERIAL_LABEL: &str = "my_serial";
+//! # fn read_serial(mut reader: MessageReader<SerialReadMessage>) {
+//! #     for SerialReadMessage(_, _) in reader.read() {}
+//! # }
+//! # fn write_serial() {}
 //! App::new()
 //!     .add_plugins(MinimalPlugins)
 //!     // you can specify various configurations for multiple serial ports by this way
@@ -114,6 +126,7 @@
 //!
 //! | bevy | bevy_serial |
 //! | ---- | ----------- |
+//! | 0.18 | 0.11        |
 //! | 0.17 | 0.10        |
 //! | 0.16 | 0.9         |
 //! | 0.15 | 0.8         |
