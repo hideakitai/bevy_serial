@@ -63,6 +63,9 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
